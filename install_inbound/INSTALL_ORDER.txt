@@ -1,0 +1,106 @@
+================================================================================
+ C2FO INBOUND AWARD PROCESSING  -  OBJECT INSTALL ORDER  (INBOUND-ONLY)
+================================================================================
+ This tree is the inbound award-processing layer ONLY: award ingest, CM
+ creation, and due-date upsert/cancel. It does NOT contain the BICC->ATP load
+ engine or the outbound extract.
+
+ Objects NOT in this tree (owned by the outbound BICC->ATP build - see install_outbound):
+   * BICC load engine: LWS_C2FO_COMMON_PKG, LWS_C2FO_BRIDGE_PKG,
+     LWS_C2FO_PVO_COLUMN_MAP (+ its ~1679 seed rows), all _STG landing tables,
+     the typed mirror tables (LWS_AP_*, LWS_POZ_*, LWS_HZ_*, LWS_ZX_*, LWS_IBY_*,
+     LWS_CE_*, LWS_FND_*, LWS_HR_*, LWS_FUN_*, LWS_PO_HEADERS_ALL) and their
+     Fusion-named bridging views.
+   * Outbound: LWS_OB_* tables, LWS_OB_RUN_SEQ, LWS_OB_EXTRACT_ATP_PKG.
+   * Shared config: LWS_C2FO_CONFIG table + its seed.
+   * Shared tracking: LWS_C2FO_PROCESS_STAGE_LOG, LWS_C2FO_FILE_PROCESS_STATUS.
+
+================================================================================
+ HARD PREREQUISITE  -  install the BICC->ATP build FIRST
+================================================================================
+ The inbound views and the award package compile against objects this tree does
+ NOT create. Running this tree against an empty schema WILL fail to compile the
+ views and the package body. Install the outbound BICC->ATP build (install_outbound)
+ into the same schema first, so the
+ following already exist and are populated:
+
+   Schema + grants   (00_create_user.sql, run as ADMIN/DBA)
+   TABLE   LWS_C2FO_CONFIG            (+ its env seed - the award package reads
+                                       config keys at runtime)
+   VIEW    AP_INVOICES_ALL           (over mirror LWS_AP_INVOICES_ALL)
+   VIEW    AP_PAYMENT_SCHEDULES_ALL  (over mirror LWS_AP_PAYMENT_SCHEDULES_ALL)
+   VIEW    FND_LOOKUP_VALUES_VL      (over mirror LWS_FND_LOOKUP_VALUES_VL)
+   TABLE   LWS_POZ_SUPPLIERS_V
+   TABLE   LWS_POZ_SUPPLIER_SITES_ALL_M
+
+ (AP_PAYMENT_SCHEDULES_ALL is referenced by the AWARD package body - which
+  resolves awards against invoice + payment-schedule rows - not by the views.
+  The remaining objects are referenced by the inbound views below:
+  CM_OFFSET_V -> AP_INVOICES_ALL, FND_LOOKUP_VALUES_VL, LWS_POZ_SUPPLIERS_V,
+                 LWS_POZ_SUPPLIER_SITES_ALL_M, + inbound VERDICT_LOAD/AWARD_DATA;
+  CM_FBDI_V   -> AP_INVOICES_ALL, LWS_POZ_SUPPLIERS_V, LWS_POZ_SUPPLIER_SITES_ALL_M,
+                 + inbound AWARD_RUN_LOG/AWARD_DATA;
+  DD_CANCEL_V -> LWS_POZ_SUPPLIERS_V, + inbound VERDICT_LOAD/AWARD_DATA;
+  DD_UPSERT_V -> inbound AWARD_DATA only.)
+
+================================================================================
+ One object per file. Run top-to-bottom (as the schema user, current_schema set
+ to the owning schema). Package SPEC must run before its BODY.
+
+ Directory layout:
+   01_ddl/        CREATE TABLE/VIEW/SEQUENCE/TRIGGER
+   02_packages/   package SPEC + BODY
+
+ Ordering rule: inbound tables + sequences + trigger first, then the inbound
+ views (they read the tables above and the prerequisite mirror), then the
+ package last.
+================================================================================
+
+STEP 1  inbound tracking + staging tables (+ sequences / trigger)
+--------------------------------------------------------------------------------
+      1. 01_ddl/LWS_AP_C2FO_AWARD_RUN_LOG.sql
+       TABLE LWS_AP_C2FO_AWARD_RUN_LOG (+ indexes)   [run-log for award batches]
+      2. 01_ddl/LWS_AP_C2FO_AWARD_RUN_SEQ.sql
+       SEQUENCE LWS_AP_C2FO_AWARD_RUN_SEQ
+      3. 01_ddl/LWS_C2FO_AWARD_DATA.sql
+       TABLE LWS_C2FO_AWARD_DATA (+ indexes)   [award record-of-truth + state machine]
+      4. 01_ddl/LWS_AP_C2FO_VERDICT_LOAD.sql
+       TABLE LWS_AP_C2FO_VERDICT_LOAD (+ indexes)
+      5. 01_ddl/LWS_AP_C2FO_VERDICT_SEQ.sql
+       SEQUENCE LWS_AP_C2FO_VERDICT_SEQ
+      6. 01_ddl/TRG_VERDICT_LOAD_BI.sql
+       TRIGGER TRG_VERDICT_LOAD_BI (assigns VERDICT_LOAD PK from the sequence)
+      7. 01_ddl/LWS_AP_C2FO_CM_CREATED_STG.sql
+       TABLE LWS_AP_C2FO_CM_CREATED_STG (+ indexes)
+      8. 01_ddl/LWS_AP_C2FO_DD_APPLIED_STG.sql
+       TABLE LWS_AP_C2FO_DD_APPLIED_STG (+ indexes)
+      8a. 01_ddl/LWS_C2FO_AWARD_VALWORK.sql
+       GLOBAL TEMPORARY TABLE LWS_C2FO_AWARD_VALWORK   [per-run validation work
+       table used by LWS_AP_C2FO_AWARD_PKG.validate_batch (set-based); session-
+       scoped, ON COMMIT PRESERVE ROWS, nothing persists]
+      8b. 01_ddl/LWS_C2FO_NETDEBIT_WORK.sql
+       GLOBAL TEMPORARY TABLE LWS_C2FO_NETDEBIT_WORK   [per-run net-debit balances,
+       one row per distinct (vendor_id, org_id, currency) in the batch; the
+       net-debit gate joins to it so the heavy balance aggregate runs a few hundred
+       times, not once per award. Session-scoped, ON COMMIT PRESERVE ROWS]
+
+STEP 2  inbound views (read STEP 1 tables + the prerequisite mirror objects)
+--------------------------------------------------------------------------------
+      9. 01_ddl/LWS_C2FO_DD_UPSERT_V.sql
+       VIEW LWS_C2FO_DD_UPSERT_V
+     10. 01_ddl/LWS_C2FO_DD_CANCEL_V.sql
+       VIEW LWS_C2FO_DD_CANCEL_V
+     11. 01_ddl/LWS_C2FO_CM_OFFSET_V.sql
+       VIEW LWS_C2FO_CM_OFFSET_V
+     12. 01_ddl/LWS_C2FO_CM_FBDI_V.sql
+       VIEW LWS_C2FO_CM_FBDI_V
+
+STEP 3  package  (spec before body)
+--------------------------------------------------------------------------------
+     13. 02_packages/LWS_AP_C2FO_AWARD_PKG_spec.sql
+       PACKAGE SPEC LWS_AP_C2FO_AWARD_PKG
+     14. 02_packages/LWS_AP_C2FO_AWARD_PKG_body.sql
+       PACKAGE BODY LWS_AP_C2FO_AWARD_PKG
+
+TOTAL OBJECTS: 16  (14 schema objects + 2 package files)
+================================================================================

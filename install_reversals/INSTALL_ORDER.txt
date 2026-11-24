@@ -1,0 +1,121 @@
+================================================================================
+ C2FO AWARD REVERSAL  -  OBJECT INSTALL ORDER  (REVERSAL-ONLY)
+================================================================================
+ This tree is the award-REVERSAL layer ONLY: it undoes a previously-processed
+ award by offsetting the discount credit memo with a positive STANDARD invoice
+ (where income<>0) and restoring the original invoice's due date + discount
+ schedule, then acknowledging each invoice back to C2FO. It does NOT contain the
+ BICC->ATP load engine, the outbound extract, or the inbound award processing.
+
+ Objects NOT in this tree (owned elsewhere):
+   * BICC load engine, mirror tables, bridging views, LWS_C2FO_CONFIG table +
+     its COMMON/INBOUND/OUTBOUND seed, outbound extract  -> install_outbound.
+   * Inbound award processing: LWS_C2FO_AWARD_DATA, the award package, the CM /
+     due-date views and verdict tables  -> install_inbound.
+
+================================================================================
+ HARD PREREQUISITE  -  install BOTH install_outbound AND install_inbound FIRST
+================================================================================
+ The reversal views and package compile against objects this tree does NOT
+ create. Running this tree against an empty schema WILL fail. Install into the
+ same schema first:
+
+   From install_outbound (BICC->ATP build):
+     Schema + grants   (00_create_user.sql, run as ADMIN/DBA)
+     TABLE   LWS_C2FO_CONFIG            (+ its COMMON/INBOUND/OUTBOUND seed - the
+                                         reversal config rows are ADDED by this
+                                         tree's 03_dml seed, which does NOT re-
+                                         insert the existing rows)
+     VIEW    AP_INVOICES_ALL           (REV_FBDI_V reads header + DFFs)
+     TABLE   LWS_POZ_SUPPLIERS_V       (REV_FBDI_V supplier name/number)
+     TABLE   LWS_POZ_SUPPLIER_SITES_ALL_M (REV_FBDI_V supplier site code)
+
+   From install_inbound (award processing):
+     TABLE   LWS_C2FO_AWARD_DATA       (validate_reversals READS it to resolve the
+                                         CM + ORIG_* schedule; a successful
+                                         reversal STAMPS its REVERSED_FLAG/_DATE/
+                                         _REASON)
+
+================================================================================
+ One object per file. Run top-to-bottom (as the schema user, current_schema set
+ to the owning schema). Package SPEC must run before its BODY.
+
+ Directory layout:
+   01_ddl/        CREATE TABLE/VIEW/SEQUENCE/TRIGGER
+   02_packages/   package SPEC + BODY
+   03_dml/        REVERSAL config seed (adds only the REVERSAL rows)
+
+ Ordering rule: reversal landing + verdict tables + sequence + trigger first,
+ then the reversal views (they read the landing table + the prerequisite mirror),
+ then the package, then the config seed.
+================================================================================
+
+STEP 1  reversal landing + verdict + staging tables (+ sequence / trigger)
+--------------------------------------------------------------------------------
+      1. 01_ddl/LWS_C2FO_REVERSAL_DATA.sql
+       TABLE LWS_C2FO_REVERSAL_DATA (+ indexes incl. CHUNK_ID)   [reversal-file rows + state machine]
+      2. 01_ddl/LWS_AP_C2FO_REV_VERDICT_LOAD.sql
+       TABLE LWS_AP_C2FO_REV_VERDICT_LOAD (+ index)   [OIC OFFSET/DD verdict carrier]
+      3. 01_ddl/LWS_AP_C2FO_REV_VERDICT_SEQ.sql
+       SEQUENCE LWS_AP_C2FO_REV_VERDICT_SEQ
+      4. 01_ddl/TRG_REV_VERDICT_LOAD_BI.sql
+       TRIGGER TRG_REV_VERDICT_LOAD_BI (assigns VERDICT_ROW_ID from the sequence)
+      5. 01_ddl/LWS_AP_C2FO_REV_CREATED_STG.sql
+       TABLE LWS_AP_C2FO_REV_CREATED_STG (+ index)   [OIC pages CREATED '<CM>-R' invoices;
+                                                      diff_chunk_rev_verdicts read-back target]
+      6. 01_ddl/LWS_AP_C2FO_REV_VALIDATED_STG.sql
+       TABLE LWS_AP_C2FO_REV_VALIDATED_STG (+ index)   [OIC pages VALIDATED '<CM>-R' invoices;
+                                                      diff_chunk_rev_validate_verdicts read-back target]
+      7. 01_ddl/LWS_AP_C2FO_REV_DD_APPLIED_STG.sql
+       TABLE LWS_AP_C2FO_REV_DD_APPLIED_STG (+ index)   [OIC pages FAILED (voucher_id,
+                                                      voucher_line_id) for the DD-restore leg;
+                                                      mark_rev_dd_failures shortfall carrier]
+
+STEP 2  reversal views (read STEP 1 landing table + the prerequisite mirror)
+--------------------------------------------------------------------------------
+      8. 01_ddl/LWS_C2FO_REV_FBDI_V.sql
+       VIEW LWS_C2FO_REV_FBDI_V   [offsetting positive STANDARD invoice FBDI build, chunked]
+      9. 01_ddl/LWS_C2FO_REV_DD_V.sql
+       VIEW LWS_C2FO_REV_DD_V     [due-date restore read view]
+
+STEP 3  package  (spec before body)
+--------------------------------------------------------------------------------
+     10. 02_packages/LWS_AP_C2FO_REVERSAL_PKG_spec.sql
+       PACKAGE SPEC LWS_AP_C2FO_REVERSAL_PKG
+     11. 02_packages/LWS_AP_C2FO_REVERSAL_PKG_body.sql
+       PACKAGE BODY LWS_AP_C2FO_REVERSAL_PKG
+
+STEP 4  reversal config seed  (adds ONLY the REVERSAL rows; table owned by install_outbound)
+--------------------------------------------------------------------------------
+     12. 03_dml/LWS_C2FO_CONFIG_reversal_seed.sql
+       6 rows under CONFIG_GROUP 'REVERSAL' (ACK_BUCKET, ACK_FOLDER, ARCHIVE_BUCKET,
+       ARCHIVE_FOLDER, SID, CLIENT_NUMBER)
+
+TOTAL OBJECTS: 11 schema/package files + 1 config seed
+
+================================================================================
+ OFFSET FBDI FLOW (clone of the award CM-creation path; OIC LWS_C2FO_REVERSAL_PROCESS)
+================================================================================
+ The offset step uses CHUNKED FBDI import (Import Payables Invoices), exactly like
+ the award CM creation - NOT per-row REST - so thousands of reversals scale. OIC
+ call order per run:
+   validate_reversals (resolve + paid/hold gate; p_ignore_hold from OIC property).
+     Offset rows -> stage RESOLVED; DD-only rows (income=0) -> straight to OFFSET_VALIDATED.
+   -> chunk_rev_offsets (assigns CHUNK_ID, BU+source aware)
+   While chunk 1..N:
+     CREATE leg: read LWS_C2FO_REV_FBDI_V (stage='RESOLVED', bind chunk_id) -> render
+       FBDI CSV -> zip -> UCM upload -> ESS Load Interface + Import Payables Invoices ->
+       page CREATED '<CM>-R' invoices into LWS_AP_C2FO_REV_CREATED_STG ->
+       diff_chunk_rev_verdicts(instance,chunk) -> annotate_reversal_offset_result_bulk
+       (promotes RESOLVED -> OFFSET_CREATED)
+     VALIDATE leg: run the Fusion validate job -> page VALIDATED '<CM>-R' invoices into
+       LWS_AP_C2FO_REV_VALIDATED_STG -> diff_chunk_rev_validate_verdicts(instance,chunk)
+       -> annotate_reversal_offset_result_bulk (promotes OFFSET_CREATED -> OFFSET_VALIDATED)
+   Then the DD-restore leg (OIC LWS_C2FO_REVERT_DUEDATE): read LWS_C2FO_REV_DD_V
+   (stage='OFFSET_VALIDATED', offset_status='OK' gate) -> adf.batch invoiceInstallments
+   upsert -> annotate_reversal_dd_result_bulk (OFFSET_VALIDATED -> REVERSED terminal;
+   stamps award REVERSED_FLAG) -> write_reversal_ack.
+ Two-stage offset leg (twin of the award CM_CREATED -> CM_VALIDATED): the offset invoice
+ is CREATED then VALIDATED by a second Fusion step. DD-only rows skip both and start at
+ OFFSET_VALIDATED. Only the DD annotate advances to REVERSED (terminal).
+================================================================================

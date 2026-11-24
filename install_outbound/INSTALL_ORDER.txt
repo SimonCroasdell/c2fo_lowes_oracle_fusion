@@ -1,0 +1,298 @@
+================================================================================
+ C2FO BICC->ATP  -  OBJECT INSTALL ORDER
+================================================================================
+ One object per file. Run top-to-bottom. 00_create_user.sql runs FIRST as
+ ADMIN/DBA (not listed below - it creates the schema + grants).
+ Package SPEC files must run before their BODY file.
+ Files marked [ENV] contain per-environment values - review before running.
+
+ Directory layout:
+   01_ddl/              CREATE TABLE/VIEW/SEQUENCE/TRIGGER (schema objects)
+   02_packages/         package SPEC + BODY files
+   03_dml/              INSERT/MERGE seed data (run after the target table)
+   04_Anonymous_block/  install-time anonymous PL/SQL blocks (guarded ALTERs)
+
+ Ordering rule: all DDL first, then the anonymous blocks (they ALTER tables
+ built in STEP 5 / STEP 4), then the DML seeds (they populate tables built in
+ STEPs 2-5), then the packages last.
+================================================================================
+
+STEP 1  framework / tracking tables
+--------------------------------------------------------------------------------
+      1. 01_ddl/LWS_C2FO_PROCESS_STAGE_LOG.sql
+       TABLE LWS_C2FO_PROCESS_STAGE_LOG
+      2. 01_ddl/LWS_C2FO_FILE_PROCESS_STATUS.sql
+       TABLE LWS_C2FO_FILE_PROCESS_STATUS
+      3. 01_ddl/LWS_C2FO_LOAD_RUN_LOG.sql
+       TABLE LWS_C2FO_LOAD_RUN_LOG
+      4. 01_ddl/LWS_C2FO_LOAD_RUN_SEQ.sql
+       SEQUENCE LWS_C2FO_LOAD_RUN_SEQ
+
+STEP 2  configuration (key/value) table
+--------------------------------------------------------------------------------
+      5. 01_ddl/LWS_C2FO_CONFIG.sql
+       TABLE LWS_C2FO_CONFIG  (seed is a separate DML file - see STEP 10)
+
+STEP 3  PVO column map table
+--------------------------------------------------------------------------------
+      6. 01_ddl/LWS_C2FO_PVO_COLUMN_MAP.sql
+       TABLE LWS_C2FO_PVO_COLUMN_MAP  (1914 seed rows are a separate DML file - see STEP 10)
+
+STEP 4  base BICC landing (_STG) tables
+--------------------------------------------------------------------------------
+      7. 01_ddl/LWS_C2FO_SUPPLIERS_STG.sql
+       TABLE LWS_C2FO_SUPPLIERS_STG
+      8. 01_ddl/LWS_C2FO_ORG_CONTACTS_STG.sql
+       TABLE LWS_C2FO_ORG_CONTACTS_STG
+      9. 01_ddl/LWS_C2FO_CONTACT_POINTS_STG.sql
+       TABLE LWS_C2FO_CONTACT_POINTS_STG
+    10. 01_ddl/LWS_C2FO_AP_INV_HEADERS_STG.sql
+       TABLE LWS_C2FO_AP_INV_HEADERS_STG
+    11. 01_ddl/LWS_C2FO_AP_INV_LINES_STG.sql
+       TABLE LWS_C2FO_AP_INV_LINES_STG
+    12. 01_ddl/LWS_C2FO_AP_INV_DISTS_STG.sql
+       TABLE LWS_C2FO_AP_INV_DISTS_STG
+    13. 01_ddl/LWS_C2FO_AP_PAY_SCHEDS_STG.sql
+       TABLE LWS_C2FO_AP_PAY_SCHEDS_STG
+    14. 01_ddl/LWS_C2FO_AP_PAY_HIST_DISTS_STG.sql
+       TABLE LWS_C2FO_AP_PAY_HIST_DISTS_STG
+    15. 01_ddl/LWS_C2FO_PO_HEADERS_STG.sql
+       TABLE LWS_C2FO_PO_HEADERS_STG
+    16. 01_ddl/LWS_C2FO_PO_LINES_STG.sql
+       TABLE LWS_C2FO_PO_LINES_STG
+    17. 01_ddl/LWS_C2FO_PO_LINE_LOCS_STG.sql
+       TABLE LWS_C2FO_PO_LINE_LOCS_STG
+    18. 01_ddl/LWS_C2FO_PO_DISTS_STG.sql
+       TABLE LWS_C2FO_PO_DISTS_STG
+    19. 01_ddl/LWS_C2FO_AP_TERM_TRANSLATIONS_STG.sql
+       TABLE LWS_C2FO_AP_TERM_TRANSLATIONS_STG
+    20. 01_ddl/LWS_C2FO_BUSINESS_UNITS_STG.sql
+       TABLE LWS_C2FO_BUSINESS_UNITS_STG
+    21. 01_ddl/LWS_C2FO_HZ_PARTIES_STG.sql
+       TABLE LWS_C2FO_HZ_PARTIES_STG
+    22. 01_ddl/LWS_C2FO_SUPPLIER_SITES_STG.sql
+       TABLE LWS_C2FO_SUPPLIER_SITES_STG (bridge landing)
+    23. 01_ddl/LWS_C2FO_RELATIONSHIPS_STG.sql
+       TABLE LWS_C2FO_RELATIONSHIPS_STG (bridge landing)
+    24. 01_ddl/LWS_C2FO_SUPP_SITE_ADDR_STG.sql
+       TABLE LWS_C2FO_SUPP_SITE_ADDR_STG (bridge landing)
+    25. 01_ddl/LWS_C2FO_AP_INV_PAYMENTS_STG.sql
+       TABLE LWS_C2FO_AP_INV_PAYMENTS_STG (bridge landing)
+    26. 01_ddl/LWS_C2FO_AP_CHECKS_STG.sql
+       TABLE LWS_C2FO_AP_CHECKS_STG (bridge landing)
+    27. 01_ddl/LWS_C2FO_FND_LOOKUPS_STG.sql
+       TABLE LWS_C2FO_FND_LOOKUPS_STG (bridge landing)
+    27a. 01_ddl/LWS_C2FO_SUPPLIER_TP_PMT_STG.sql
+       TABLE LWS_C2FO_SUPPLIER_TP_PMT_STG (bridge landing - third-party payment rel)
+
+STEP 5  typed mirror tables (+ indexes)
+--------------------------------------------------------------------------------
+    28. 01_ddl/LWS_AP_INVOICES_ALL.sql
+       TABLE LWS_AP_INVOICES_ALL (+ its indexes)
+    29. 01_ddl/LWS_AP_PAYMENT_SCHEDULES_ALL.sql
+       TABLE LWS_AP_PAYMENT_SCHEDULES_ALL (+ its indexes)
+    30. 01_ddl/LWS_AP_TERMS_TL.sql
+       TABLE LWS_AP_TERMS_TL (+ its indexes)
+    31. 01_ddl/LWS_AP_HOLDS_ALL.sql
+       TABLE LWS_AP_HOLDS_ALL (+ its indexes)
+    32. 01_ddl/LWS_AP_INVOICE_PAYMENTS_ALL.sql
+       TABLE LWS_AP_INVOICE_PAYMENTS_ALL (+ its indexes)
+    33. 01_ddl/LWS_AP_CHECKS_ALL.sql
+       TABLE LWS_AP_CHECKS_ALL (+ its indexes)
+    34. 01_ddl/LWS_AP_INVOICE_LINES_ALL.sql
+       TABLE LWS_AP_INVOICE_LINES_ALL (+ its indexes)
+    35. 01_ddl/LWS_AP_INVOICE_DISTRIBUTIONS_ALL.sql
+       TABLE LWS_AP_INVOICE_DISTRIBUTIONS_ALL (+ its indexes)
+    36. 01_ddl/LWS_POZ_SUPPLIERS_V.sql
+       TABLE LWS_POZ_SUPPLIERS_V (+ its indexes)
+    37. 01_ddl/LWS_POZ_SUPPLIER_SITES_ALL_M.sql
+       TABLE LWS_POZ_SUPPLIER_SITES_ALL_M (+ its indexes)
+    38. 01_ddl/LWS_POZ_SUPPLIER_ADDRESS_V.sql
+       TABLE LWS_POZ_SUPPLIER_ADDRESS_V (+ its indexes)
+    38a. 01_ddl/LWS_POZ_SUP_THIRDPARTY_PAYMENT_REL.sql
+       TABLE LWS_POZ_SUP_THIRDPARTY_PAYMENT_REL (+ its indexes)
+    39. 01_ddl/LWS_HR_ALL_ORGANIZATION_UNITS.sql
+       TABLE LWS_HR_ALL_ORGANIZATION_UNITS (+ its indexes)
+    40. 01_ddl/LWS_HR_LOCATIONS_ALL.sql
+       TABLE LWS_HR_LOCATIONS_ALL (+ its indexes)
+    41. 01_ddl/LWS_FUN_ALL_BUSINESS_UNITS_V.sql
+       TABLE LWS_FUN_ALL_BUSINESS_UNITS_V (+ its indexes)
+    42. 01_ddl/LWS_PO_HEADERS_ALL.sql
+       TABLE LWS_PO_HEADERS_ALL (+ its indexes)
+    43. 01_ddl/LWS_HZ_PARTIES.sql
+       TABLE LWS_HZ_PARTIES (+ its indexes)
+    44. 01_ddl/LWS_HZ_RELATIONSHIPS.sql
+       TABLE LWS_HZ_RELATIONSHIPS (+ its indexes)
+    45. 01_ddl/LWS_HZ_PARTY_SITES.sql
+       TABLE LWS_HZ_PARTY_SITES (+ its indexes)
+    46. 01_ddl/LWS_HZ_CONTACT_POINTS.sql
+       TABLE LWS_HZ_CONTACT_POINTS (+ its indexes)
+    47. 01_ddl/LWS_ZX_PARTY_TAX_PROFILE.sql
+       TABLE LWS_ZX_PARTY_TAX_PROFILE (+ its indexes)
+    48. 01_ddl/LWS_ZX_REGISTRATIONS.sql
+       TABLE LWS_ZX_REGISTRATIONS (+ its indexes)
+    49. 01_ddl/LWS_ZX_LINES.sql
+       TABLE LWS_ZX_LINES (+ its indexes)
+    50. 01_ddl/LWS_IBY_EXTERNAL_PAYEES_ALL.sql
+       TABLE LWS_IBY_EXTERNAL_PAYEES_ALL (+ its indexes)
+    51. 01_ddl/LWS_IBY_PMT_INSTR_USES_ALL.sql
+       TABLE LWS_IBY_PMT_INSTR_USES_ALL (+ its indexes)
+    52. 01_ddl/LWS_IBY_EXT_BANK_ACCOUNTS.sql
+       TABLE LWS_IBY_EXT_BANK_ACCOUNTS (+ its indexes)
+    53. 01_ddl/LWS_IBY_PAYMENTS_ALL.sql
+       TABLE LWS_IBY_PAYMENTS_ALL (+ its indexes)
+    54. 01_ddl/LWS_CE_BANKS_V.sql
+       TABLE LWS_CE_BANKS_V (+ its indexes)
+    55. 01_ddl/LWS_CE_BANK_BRANCHES_V.sql
+       TABLE LWS_CE_BANK_BRANCHES_V (+ its indexes)
+    56. 01_ddl/LWS_FND_LOOKUP_VALUES_VL.sql
+       TABLE LWS_FND_LOOKUP_VALUES_VL (+ its indexes)
+
+STEP 6  Fusion-named bridging views (need mirror tables)
+--------------------------------------------------------------------------------
+    57. 01_ddl/AP_INVOICES_ALL.sql
+       VIEW AP_INVOICES_ALL
+    58. 01_ddl/AP_PAYMENT_SCHEDULES_ALL.sql
+       VIEW AP_PAYMENT_SCHEDULES_ALL
+    59. 01_ddl/AP_TERMS_TL.sql
+       VIEW AP_TERMS_TL
+    60. 01_ddl/AP_HOLDS_ALL.sql
+       VIEW AP_HOLDS_ALL
+    61. 01_ddl/AP_INVOICE_LINES_ALL.sql
+       VIEW AP_INVOICE_LINES_ALL
+    62. 01_ddl/AP_INVOICE_PAYMENTS_ALL.sql
+       VIEW AP_INVOICE_PAYMENTS_ALL
+    63. 01_ddl/AP_CHECKS_ALL.sql
+       VIEW AP_CHECKS_ALL
+    64. 01_ddl/POZ_SUPPLIERS_V.sql
+       VIEW POZ_SUPPLIERS_V
+    65. 01_ddl/POZ_SUPPLIER_SITES_ALL_M.sql
+       VIEW POZ_SUPPLIER_SITES_ALL_M
+    66. 01_ddl/POZ_SUPPLIER_ADDRESS_V.sql
+       VIEW POZ_SUPPLIER_ADDRESS_V
+    66a. 01_ddl/POZ_SUP_THIRDPARTY_PAYMENT_REL.sql
+       VIEW POZ_SUP_THIRDPARTY_PAYMENT_REL
+    67. 01_ddl/HR_ALL_ORGANIZATION_UNITS.sql
+       VIEW HR_ALL_ORGANIZATION_UNITS
+    68. 01_ddl/HR_LOCATIONS_ALL.sql
+       VIEW HR_LOCATIONS_ALL
+    69. 01_ddl/FUN_ALL_BUSINESS_UNITS_V.sql
+       VIEW FUN_ALL_BUSINESS_UNITS_V
+    70. 01_ddl/PO_HEADERS_ALL.sql
+       VIEW PO_HEADERS_ALL
+    71. 01_ddl/HZ_PARTIES.sql
+       VIEW HZ_PARTIES
+    72. 01_ddl/HZ_RELATIONSHIPS.sql
+       VIEW HZ_RELATIONSHIPS
+    73. 01_ddl/HZ_PARTY_SITES.sql
+       VIEW HZ_PARTY_SITES
+    74. 01_ddl/HZ_CONTACT_POINTS.sql
+       VIEW HZ_CONTACT_POINTS
+    75. 01_ddl/ZX_PARTY_TAX_PROFILE.sql
+       VIEW ZX_PARTY_TAX_PROFILE
+    76. 01_ddl/ZX_REGISTRATIONS.sql
+       VIEW ZX_REGISTRATIONS
+    77. 01_ddl/ZX_LINES.sql
+       VIEW ZX_LINES
+    78. 01_ddl/IBY_EXTERNAL_PAYEES_ALL.sql
+       VIEW IBY_EXTERNAL_PAYEES_ALL
+    79. 01_ddl/IBY_PMT_INSTR_USES_ALL.sql
+       VIEW IBY_PMT_INSTR_USES_ALL
+    80. 01_ddl/IBY_EXT_BANK_ACCOUNTS.sql
+       VIEW IBY_EXT_BANK_ACCOUNTS
+    81. 01_ddl/FND_LOOKUP_VALUES_VL.sql
+       VIEW FND_LOOKUP_VALUES_VL
+
+STEP 7  outbound + award output staging + inbound views
+--------------------------------------------------------------------------------
+    82. 01_ddl/LWS_C2FO_CM_FBDI_V.sql
+       VIEW LWS_C2FO_CM_FBDI_V
+    83. 01_ddl/LWS_OB_INVOICE.sql
+       TABLE LWS_OB_INVOICE
+    84. 01_ddl/LWS_OB_ORGANIZATION.sql
+       TABLE LWS_OB_ORGANIZATION
+    85. 01_ddl/LWS_OB_USER.sql
+       TABLE LWS_OB_USER
+    86. 01_ddl/LWS_OB_PO.sql
+       TABLE LWS_OB_PO
+    87. 01_ddl/LWS_OB_FEEDBACK.sql
+       TABLE LWS_OB_FEEDBACK
+    88. 01_ddl/LWS_OB_CONTROL.sql
+       TABLE LWS_OB_CONTROL
+    89. 01_ddl/LWS_OB_RUN_LOG.sql
+       TABLE LWS_OB_RUN_LOG
+    90. 01_ddl/LWS_OB_RUN_SEQ.sql
+       SEQUENCE LWS_OB_RUN_SEQ
+    91. 01_ddl/LWS_AP_C2FO_AWARD_RUN_LOG.sql
+       TABLE LWS_AP_C2FO_AWARD_RUN_LOG (+ indexes)
+    92. 01_ddl/LWS_AP_C2FO_AWARD_RUN_SEQ.sql
+       SEQUENCE LWS_AP_C2FO_AWARD_RUN_SEQ
+    93. 01_ddl/LWS_AP_C2FO_VERDICT_LOAD.sql
+       TABLE LWS_AP_C2FO_VERDICT_LOAD (+ indexes)
+    94. 01_ddl/LWS_AP_C2FO_VERDICT_SEQ.sql
+       SEQUENCE LWS_AP_C2FO_VERDICT_SEQ
+    95. 01_ddl/TRG_VERDICT_LOAD_BI.sql
+       TRIGGER TRG_VERDICT_LOAD_BI (assigns VERDICT_LOAD PK)
+    96. 01_ddl/LWS_AP_C2FO_CM_CREATED_STG.sql
+       TABLE LWS_AP_C2FO_CM_CREATED_STG (+ indexes)
+    97. 01_ddl/LWS_AP_C2FO_DD_APPLIED_STG.sql
+       TABLE LWS_AP_C2FO_DD_APPLIED_STG (+ indexes)
+    98. 01_ddl/LWS_C2FO_AWARD_DATA.sql
+       TABLE LWS_C2FO_AWARD_DATA (+ indexes)
+    99. 01_ddl/LWS_C2FO_DD_UPSERT_V.sql
+       VIEW LWS_C2FO_DD_UPSERT_V
+   100. 01_ddl/LWS_C2FO_DD_CANCEL_V.sql
+       VIEW LWS_C2FO_DD_CANCEL_V
+   101. 01_ddl/LWS_C2FO_CM_OFFSET_V.sql
+       VIEW LWS_C2FO_CM_OFFSET_V
+
+STEP 8  anonymous PL/SQL blocks (guarded ALTERs - run after their target table)
+--------------------------------------------------------------------------------
+   102. 04_Anonymous_block/LWS_C2FO_SUPPLIERS_STG_add_VENDOR_NAME.sql
+       ANON BLOCK: guarded ALTER adding VENDOR_NAME to LWS_C2FO_SUPPLIERS_STG (table from STEP 4 #7)
+   103. 04_Anonymous_block/LWS_POZ_SUPPLIERS_V_add_attributes.sql
+       ANON BLOCK: guarded loop adding ATTRIBUTE1-20 to LWS_POZ_SUPPLIERS_V (table from STEP 5 #36)
+
+STEP 9  DML seed data (run after the target tables above)
+--------------------------------------------------------------------------------
+   104. 03_dml/LWS_C2FO_CONFIG_seed.sql
+       SEED LWS_C2FO_CONFIG (env-specific: credential/namespace/URI/buckets; table from STEP 2 #5)  [ENV]
+   105. 03_dml/LWS_C2FO_PVO_COLUMN_MAP_rows.sql
+       SEED LWS_C2FO_PVO_COLUMN_MAP (authoritative 1914-row set from DEV; self-contained:
+       DELETEs the table then inserts all rows. Identity-safe (no MAP_ID). Supersedes the
+       old split base+bridge files; the former dml_bridge_PVO_COLUMN_MAP_rows.sql is removed.)
+   106. 03_dml/FND_LOOKUP_VALUES_VL.sql
+       SEED LWS_FND_LOOKUP_VALUES_VL (env-specific: in-scope BU names + invoice types; table from STEP 5 #56)  [ENV]
+
+STEP 10  packages  (spec before body;  COMMON -> BRIDGE -> OB_EXTRACT -> AWARD)
+--------------------------------------------------------------------------------
+   108. 02_packages/LWS_C2FO_COMMON_PKG_spec.sql
+       PACKAGE SPEC LWS_C2FO_COMMON_PKG
+   109. 02_packages/LWS_C2FO_COMMON_PKG_body.sql
+       PACKAGE BODY LWS_C2FO_COMMON_PKG
+   110. 02_packages/LWS_C2FO_BRIDGE_PKG_spec.sql
+       PACKAGE SPEC lws_c2fo_bridge_pkg
+   111. 02_packages/LWS_C2FO_BRIDGE_PKG_body.sql
+       PACKAGE BODY lws_c2fo_bridge_pkg
+   112. 02_packages/LWS_OB_EXTRACT_ATP_PKG_spec.sql
+       PACKAGE SPEC LWS_OB_EXTRACT_ATP_PKG
+   113. 02_packages/LWS_OB_EXTRACT_ATP_PKG_body.sql
+       PACKAGE BODY LWS_OB_EXTRACT_ATP_PKG
+   114. 02_packages/LWS_AP_C2FO_AWARD_PKG_spec.sql
+       PACKAGE SPEC LWS_AP_C2FO_AWARD_PKG
+   115. 02_packages/LWS_AP_C2FO_AWARD_PKG_body.sql
+       PACKAGE BODY LWS_AP_C2FO_AWARD_PKG
+
+ANONYMOUS PL/SQL BLOCKS (install-time, not schema objects)
+--------------------------------------------------------------------------------
+   There are two at the top level; each now lives in its own file (none are hidden inside a package).
+  Two are schema-install blocks and are run as STEP 8 above:
+    * 04_Anonymous_block/LWS_C2FO_SUPPLIERS_STG_add_VENDOR_NAME.sql
+        guarded ALTER adding VENDOR_NAME to LWS_C2FO_SUPPLIERS_STG.
+        Run AFTER LWS_C2FO_SUPPLIERS_STG.sql (STEP 4).
+    * 04_Anonymous_block/LWS_POZ_SUPPLIERS_V_add_attributes.sql
+        guarded loop adding ATTRIBUTE1-20 to LWS_POZ_SUPPLIERS_V (ORA-01430 trap).
+        Run AFTER LWS_POZ_SUPPLIERS_V.sql (STEP 5).
+
+TOTAL OBJECTS: 120  (118 schema objects + 2 install-time anonymous blocks)
+================================================================================
